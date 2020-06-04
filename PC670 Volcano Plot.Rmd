@@ -1,0 +1,156 @@
+---
+title: "PC670 Volcano Plot"
+author: "Alex Prevatte"
+date: "3/25/2020"
+output: html_document
+---
+
+```{r}
+
+####adapted from Dennis
+
+#++++++++++++++++++++++++++++++++++++++
+# Volcano plots
+#++++++++++++++++++++++++++++++++++++++
+plotVolcano <- function(data, 
+                        all.data, 
+                        design, 
+                        bio.threshold=1, 
+                        stat.threshold=0.05, 
+                        stat.method="p", 
+                        add.labels=T)
+{
+  is.phospho <- design$Enriched[1] == "phospho"
+  # calc p-values using one-way anova
+  stat.values <- anova.per.row(data, design)
+  if (stat.method == "q")
+  {
+    # calc q-values based on p-values
+    stat.values <- p.adjust(stat.values, method="fdr")
+  }
+  
+  for (c1 in levels(design$Condition))
+  {
+    abundance.c1 <- rowMeans(data[,design$Condition==c1])
+    for (c2 in levels(design$Condition))
+    {
+      if (c1 > c2)
+      {
+        abundance.c2 <- rowMeans(data[,design$Condition==c2])
+        ratios <- abundance.c1-abundance.c2
+        
+        
+        if (is.phospho)
+        {
+          ggdata <- data.frame(ratio=ratios, 
+                               stat=-log10(stat.values), 
+                               label=all.data$Labels,
+                               significance="none",
+                               amino.acid=all.data$Amino.acid,
+                               is.known.site=as.factor(all.data$is.known.site))
+        }
+        else
+        {
+          ggdata <- data.frame(ratio=ratios, 
+                               stat=-log10(stat.values), 
+                               label=all.data$Labels,
+                               significance="none")
+        }
+        
+        
+        levels(ggdata$significance) <- c("none", "sig fold-change", "sig statistic", "sig both")
+        
+        
+        ggdata$significance[abs(ggdata$ratio) >= bio.threshold] = "sig fold-change"
+        ggdata$significance[ggdata$stat >= -log10(stat.threshold)] = "sig statistic"
+        ggdata$significance[abs(ggdata$ratio) >= bio.threshold & ggdata$stat >= -log10(stat.threshold)] = "sig both"
+        
+        if (!add.labels)
+        {
+          ggdata$label <- ""
+        } 
+        else
+        {
+          ggdata$label[ggdata$significance != "sig both"] <- ""
+        }
+        
+        if (is.phospho)
+        {
+          p <- ggplot(data=ggdata, aes(x=ratio, y=stat, label=label, 
+                                       color=significance, shape=amino.acid))#, 
+                                       #size = is.known.site))
+          quant.protein <- subset(all.data, select = grep(" protein ", colnames(all.data)))
+          protein.fc <- rowMeans(quant.protein[,design$Condition==c1]) - rowMeans(quant.protein[,design$Condition==c2])
+          all.data[[paste("Protein Log2 Fold Change ", c1, "/", c2, sep="")]] <- protein.fc
+        }
+        else 
+        {
+          p <- ggplot(data=ggdata, aes(x=ratio, y=stat, label=label, 
+                                       color=significance))
+        }
+        
+        output_dir <- "volcano plots"
+        createDir(output_dir)
+        filename <- paste(experiment.name, design$Enriched[1], c1, c2, bio.threshold, stat.method, stat.threshold, sep="_")
+        prefix <- paste(output_dir, filename, sep="/")
+        write.table(cbind(all.data, ggdata), file=paste(prefix,".txt", sep=""), sep="\t", row.names = F)
+        
+        plotting.export.data <- subset(ggdata, select = c(ratio, stat, significance))
+        colnames(plotting.export.data) <- c(paste(design$Enriched[1], " Log2 Fold Change ", c1, "/", c2, sep=""), 
+                                            paste("-log10(ANOVA ", stat.method, "-value)", sep=""), 
+                                            paste("Significance (",  design$Enriched[1], ")? (", stat.method, 
+                                                  "-value <= ", stat.threshold, " and abs(FC) >= ", bio.threshold, ")", sep=""))
+        if (is.phospho)
+        {
+          output.phospho.excel(cbind(all.data, plotting.export.data), design, prefix)
+        } else {
+          output.protein.excel(cbind(all.data, plotting.export.data), design, prefix)
+        }
+        
+        
+        
+        min.x <- min(min(ggdata$ratio), -bio.threshold)
+        max.x <- max(max(ggdata$ratio), bio.threshold)
+        x.range <- max.x - min.x
+        
+        y.range <- max(ggdata$stat) - min(ggdata$stat)
+        
+        p <- (p 
+              + geom_point(alpha=0.8) 
+              + geom_text(nudge_y = 0.03 * y.range, size=3, color="#ff2020")
+  
+              + geom_vline(xintercept = -bio.threshold, linetype="dashed", color="#333333")
+              + geom_vline(xintercept = bio.threshold, linetype="dashed", color="#333333")
+              + geom_hline(yintercept = -log10(stat.threshold), linetype="dashed", color="#333333")
+                
+              + scale_color_manual(values=c("none"="#666666", "sig fold-change"="#f2c963", "sig statistic"="#f5aaaa", "sig both"="#ff2020"))
+              #+ scale_size_manual(values=c("High-throughput"=2, "Low-throughput"=4, "No"=6))
+              
+              + scale_x_continuous(limits=c(min.x - x.range/10, max.x + x.range/10))
+                
+              + ylab(paste("-log10(",stat.method,"-value)", sep=""))
+              + xlab(paste("log2(", c1, " / ", c2, ")", sep=""))
+              + ggtitle(paste("Volcano plot -", experiment.name, design$Enriched[1], c1, "vs", c2))
+             )
+        filename <- paste(experiment.name, "Volcano", design$Enriched[1], c1, "vs", c2, bio.threshold, stat.method, stat.threshold, sep="_")
+        
+        if (add.labels)
+        {
+          filename <- paste(filename, "labeled", sep="_")  
+        }
+        
+        savefig(p, filename, 9, 6.5)  
+      }
+    }
+  }
+}
+
+savefig <- function(p, filename, width, height)
+{
+  createDir("figures")
+  pdf(paste("figures/" ,filename, ".pdf", sep=""), width=width, height=height)
+  print(p)
+  dev.off()
+}
+```
+

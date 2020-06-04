@@ -1,0 +1,228 @@
+---
+title: "PC685 Lumos Volcano Plot"
+author: "Alex Prevatte"
+date: "4/27/2020"
+output:
+  html_document:
+    df_print: paged
+editor_options:
+  chunk_output_type: console
+---
+
+```{r}
+#++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Libraries
+#++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+library("ggplot2")
+library("grid")
+library("gridExtra")
+library("readr")
+library("dplyr")
+library("ggrepel")
+library("tidyverse")
+
+
+#read in the textfile
+PC685 <- read_tsv("/Users/awprevatte/PC685 Volcano Plot Data.txt")
+#remove nans
+PC685 <- na.omit(PC685)
+#convert to a dataframe
+data685 <- data.frame(PC685)
+#filter out needed info for AKTi/DMSO
+data685_1 <- data.frame(data685$Gene.names, data685$Log2.FC.AKTi.DMSO, data685$X.log..p.value..AKTi.DMSO)
+
+#change names of columns
+names(data685_1)[names(data685_1) == "data685.Gene.names"] <- "Gene"
+names(data685_1)[names(data685_1) == "data685.Log2.FC.AKTi.DMSO"] <- "Log2_FC_AKTi_DMSO"
+names(data685_1)[names(data685_1) == "data685.X.log..p.value..AKTi.DMSO"] <- "Logpvalue_AKTi_DMSO"
+#check column names
+colnames(data685_1)
+
+#filtering the data according to volcano thresholds and setting up factoring by adding a column for each subset. 
+
+#assigned numbers based on what color groupings I want
+
+sigFCleft <- subset(data685_1, Log2_FC_AKTi_DMSO <= -0.5 & Logpvalue_AKTi_DMSO < 1.3)
+
+#factoring
+sigFCleft$ID <- rep("sig fold change",nrow(sigFCleft))
+
+sigFCright <- subset(data685_1,Log2_FC_AKTi_DMSO >= 0.5 & Logpvalue_AKTi_DMSO < 1.3)
+#factoring
+sigFCright$ID <- rep("sig fold change",nrow(sigFCright))
+
+sigstat <- subset(data685_1,Log2_FC_AKTi_DMSO > -0.5 & Logpvalue_AKTi_DMSO >= 1.3)
+
+sigstat2 <- subset(sigstat,Log2_FC_AKTi_DMSO < 0.5 & Logpvalue_AKTi_DMSO >= 1.3)
+#factoring
+sigstat2$ID <- rep("sig statistic",nrow(sigstat2))
+
+none <- subset(data685_1,Log2_FC_AKTi_DMSO > -0.5 & Logpvalue_AKTi_DMSO < 1.3)
+
+none2 <- subset(none,Log2_FC_AKTi_DMSO < 0.5 & Logpvalue_AKTi_DMSO < 1.3)
+#factoring
+none2$ID <- rep("none",nrow(none2))
+
+sigbothleft <- subset(data685_1,Log2_FC_AKTi_DMSO <= -0.5 & Logpvalue_AKTi_DMSO >= 1.3)
+#factoring
+sigbothleft$ID <- rep("sig both",nrow(sigbothleft))
+
+sigbothright <- subset(data685_1,Log2_FC_AKTi_DMSO >= 0.5 & Logpvalue_AKTi_DMSO >= 1.3)
+#factoring
+sigbothright$ID <- rep("sig both",nrow(sigbothright))
+#Gene of interest
+#sigbothright$ID[1] <- rep("CCNF")
+
+#combine rows to make a clean dataframe
+
+data685_AKTi <- rbind(sigFCleft, sigFCright, sigstat2, none2, sigbothleft, sigbothright)
+
+#assign gene names to row names 
+row.names(data685_AKTi) <- make.names(data685$Gene, unique = TRUE)
+
+#Create Gene labels column and fill in gene name for gene of interest
+#data685_16$Genelabels <- "" 
+#which(apply(data685_16, 1, function(r) any(r %in% c("CCNF"))))
+#ata685_16$Genelabels[8229] <- row.names(data685_16)[8229]
+
+#ggplot theme
+theme<-theme(panel.background = element_blank(),panel.border=element_rect(fill=NA),panel.grid.major = element_blank(),panel.grid.minor = element_blank(),strip.background=element_blank(),axis.text.x=element_text(colour="black"),axis.text.y=element_text(colour="black"),axis.ticks=element_line(colour="black"),plot.margin=unit(c(1,1,1,1),"line"),legend.key = element_rect(fill = "white", color = NA))
+
+#volcano plot 
+p1 <- ggplot(data685_AKTi, aes(x = Log2_FC_AKTi_DMSO, y = Logpvalue_AKTi_DMSO, color = ID)) +
+  geom_point() +
+  xlim(-4, 4) +
+  #geom_text_repel(data = data685_AKTi, aes(label = ifelse(Genelabels == "CCNF", rownames(data685_16),"")),show.legend=FALSE) +
+  labs(
+    x = "Log2 FC",
+    y = "-log(p-value)",
+    color = "ID"
+  ) + 
+  theme +
+geom_vline(
+    xintercept = 0.5,
+    col = "black",
+    linetype = "dotted",
+    size = 1
+  ) +
+  geom_vline(
+    xintercept = -0.5,
+    col = "black",
+    linetype = "dotted",
+    size = 1
+  ) +
+  geom_hline(
+    yintercept = 1.3,
+    col = "black",
+    linetype = "dotted",
+    size = 1
+  ) +
+  ggtitle(paste("PC685 Lumos AKTi/DMSO"))
+             
+
+    p1 <- p1 + scale_color_manual(values=c("none"="#666666", "sig fold change"="#f2c963", "sig statistic"="#f5aaaa", "sig both"="#ff2020", "CCNF" = "#2c7fb8"))
+    
+    #PDF of plot
+    #pdf("PC685 Volcano Plot Lumos AKTi_DMSO.pdf", width=9, height=6.5)
+    print(p1)
+    #dev.off()
+    
+
+data685_1 <- data.frame(data685$Gene.names, data685$Log2.FC.PI3K.DMSO, data685$X.log..p.value..PI3K.DMSO)
+
+#change names of columns
+names(data685_1)[names(data685_1) == "data685.Gene.names"] <- "Gene"
+names(data685_1)[names(data685_1) == "data685.Log2.FC.PI3K.DMSO"] <- "Log2_FC_PI3K_DMSO"
+names(data685_1)[names(data685_1) == "data685.X.log..p.value..PI3K.DMSO"] <- "Logpvalue_PI3K_DMSO"
+#check column names
+colnames(data685_1)
+
+#filtering the data according to volcano thresholds and setting up factoring by adding a column for each subset. 
+
+#assigned numbers based on what color groupings I want
+
+sigFCleft <- subset(data685_1, Log2_FC_PI3K_DMSO <= -0.5 & Logpvalue_PI3K_DMSO < 1.3)
+
+#factoring
+sigFCleft$ID <- rep("sig fold change",nrow(sigFCleft))
+
+sigFCright <- subset(data685_1,Log2_FC_PI3K_DMSO >= 0.5 & Logpvalue_PI3K_DMSO < 1.3)
+#factoring
+sigFCright$ID <- rep("sig fold change",nrow(sigFCright))
+
+sigstat <- subset(data685_1,Log2_FC_PI3K_DMSO > -0.5 & Logpvalue_PI3K_DMSO >= 1.3)
+
+sigstat2 <- subset(sigstat,Log2_FC_PI3K_DMSO < 0.5 & Logpvalue_PI3K_DMSO >= 1.3)
+#factoring
+sigstat2$ID <- rep("sig statistic",nrow(sigstat2))
+
+none <- subset(data685_1,Log2_FC_PI3K_DMSO > -0.5 & Logpvalue_PI3K_DMSO < 1.3)
+
+none2 <- subset(none,Log2_FC_PI3K_DMSO < 0.5 & Logpvalue_PI3K_DMSO < 1.3)
+#factoring
+none2$ID <- rep("none",nrow(none2))
+
+sigbothleft <- subset(data685_1,Log2_FC_PI3K_DMSO <= -0.5 & Logpvalue_PI3K_DMSO >= 1.3)
+#factoring
+sigbothleft$ID <- rep("sig both",nrow(sigbothleft))
+
+sigbothright <- subset(data685_1,Log2_FC_PI3K_DMSO >= 0.5 & Logpvalue_PI3K_DMSO >= 1.3)
+#factoring
+sigbothright$ID <- rep("sig both",nrow(sigbothright))
+#Gene of interest
+#sigbothright$ID[1] <- rep("CCNF")
+
+#combine rows to make a clean dataframe
+
+data685_PI3K <- rbind(sigFCleft, sigFCright, sigstat2, none2, sigbothleft, sigbothright)
+
+#assign gene names to row names 
+row.names(data685_AKTi) <- make.names(data685$Gene, unique = TRUE)
+
+#Create Gene labels column and fill in gene name for gene of interest
+#data685_16$Genelabels <- "" 
+#which(apply(data685_16, 1, function(r) any(r %in% c("CCNF"))))
+#ata685_16$Genelabels[8229] <- row.names(data685_16)[8229]
+
+#ggplot theme
+theme<-theme(panel.background = element_blank(),panel.border=element_rect(fill=NA),panel.grid.major = element_blank(),panel.grid.minor = element_blank(),strip.background=element_blank(),axis.text.x=element_text(colour="black"),axis.text.y=element_text(colour="black"),axis.ticks=element_line(colour="black"),plot.margin=unit(c(1,1,1,1),"line"),legend.key = element_rect(fill = "white", color = NA))
+
+#volcano plot 
+p1 <- ggplot(data685_PI3K, aes(x = Log2_FC_PI3K_DMSO, y = Logpvalue_PI3K_DMSO, color = ID)) +
+  geom_point() +
+  xlim(-2.5, 2.5) +
+  #geom_text_repel(data = data685_AKTi, aes(label = ifelse(Genelabels == "CCNF", rownames(data685_16),"")),show.legend=FALSE) +
+  labs(
+    x = "Log2 FC",
+    y = "-log(p-value)",
+    color = "ID"
+  ) + 
+  theme +
+geom_vline(
+    xintercept = 0.5,
+    col = "black",
+    linetype = "dotted",
+    size = 1
+  ) +
+  geom_vline(
+    xintercept = -0.5,
+    col = "black",
+    linetype = "dotted",
+    size = 1
+  ) +
+  geom_hline(
+    yintercept = 1.3,
+    col = "black",
+    linetype = "dotted",
+    size = 1
+  ) +
+  ggtitle(paste("PC685 Lumos PI3K/DMSO"))
+             
+
+    p1 <- p1 + scale_color_manual(values=c("none"="#666666", "sig fold change"="#f2c963", "sig statistic"="#f5aaaa", "sig both"="#ff2020", "CCNF" = "#2c7fb8"))
+    
+    #PDF of plot
+    #pdf("PC685 Volcano Plot Lumos PI3K_DMSO.pdf", width=9, height=6.5)
+    print(p1)
+    #dev.off()
+```
